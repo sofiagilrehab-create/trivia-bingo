@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Trivia Bingo Showdown - Category Match</title>
+    <!-- Tailwind CSS for utility styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for crisp category icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Canvas Confetti Library -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Fredoka', 'Inter', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+
+        /* 3D Tactile Button Effects */
+        .btn-tactile {
+            transition: all 0.1s ease;
+            box-shadow: 0 6px 0 rgba(0,0,0,0.25);
+        }
+        .btn-tactile:active {
+            transform: translateY(4px);
+            box-shadow: 0 2px 0 rgba(0,0,0,0.25);
+        }
+
+        /* Card Flip Animation */
+        .bingo-tile {
+            perspective: 1000px;
+        }
+        .tile-inner {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+            transform-style: preserve-3d;
+        }
+        .bingo-tile.marked .tile-inner {
+            transform: rotateY(180deg);
+        }
+        .tile-front, .tile-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+            border-radius: 1rem;
+        }
+        .tile-back {
+            transform: rotateY(180deg);
+        }
+
+        /* Glowing Pulse for Matches */
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 15px rgba(234, 179, 8, 0.8), 0 0 30px rgba(234, 179, 8, 0.4); }
+            50% { box-shadow: 0 0 25px rgba(234, 179, 8, 1), 0 0 45px rgba(234, 179, 8, 0.7); }
+        }
+        .highlight-category {
+            animation: pulse-glow 1.5s infinite;
+            border: 4px solid #facc15 !important;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.1);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-white min-h-screen flex flex-col justify-between overflow-x-hidden">
+
+    <!-- TOP HEADER / TOOLBAR -->
+    <header class="bg-slate-800 border-b border-slate-700 px-4 py-3 flex items-center justify-between shadow-lg sticky top-0 z-30">
+        <div class="flex items-center space-x-3">
+            <div class="bg-gradient-to-tr from-amber-400 to-orange-500 p-2.5 rounded-2xl shadow-md flex items-center justify-center">
+                <i class="fa-solid fa-trophy text-2xl text-slate-900"></i>
+            </div>
+            <div>
+                <h1 class="text-xl sm:text-2xl font-bold tracking-wide bg-gradient-to-r from-amber-300 via-orange-400 to-amber-200 bg-clip-text text-transparent">
+                    TRIVIA BINGO
+                </h1>
+                <p class="text-xs text-slate-400 hidden sm:block">Category Match Centre Edition</p>
+            </div>
+        </div>
+
+        <!-- Mode Switcher & Audio Controls -->
+        <div class="flex items-center space-x-2 sm:space-x-4">
+            <!-- Mode Toggle Tabs -->
+            <div class="bg-slate-900 p-1 rounded-xl flex border border-slate-700">
+                <button id="btn-mode-player" onclick="switchView('player')" class="px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 bg-indigo-600 text-white shadow">
+                    <i class="fa-solid fa-gamepad"></i>
+                    <span class="hidden md:inline">Player Board</span>
+                </button>
+                <button id="btn-mode-host" onclick="switchView('host')" class="px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-sm font-semibold text-slate-400 transition-all flex items-center gap-2 hover:text-white">
+                    <i class="fa-solid fa-headset"></i>
+                    <span class="hidden md:inline">Host Panel</span>
+                </button>
+            </div>
+
+            <!-- Sound Toggle Button -->
+            <button id="btn-sound" onclick="toggleSound()" class="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-slate-700 hover:bg-slate-600 text-amber-400 flex items-center justify-center text-lg btn-tactile border border-slate-600">
+                <i id="sound-icon" class="fa-solid fa-volume-high"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT CONTAINER -->
+    <main class="flex-grow p-3 sm:p-6 max-w-6xl mx-auto w-full flex flex-col justify-center items-center">
+
+        <!-- ==================== PLAYER VIEW ==================== -->
+        <section id="view-player" class="w-full flex flex-col items-center">
+            
+            <!-- Player Bar: Stamp Selector & Progress -->
+            <div class="w-full max-w-2xl bg-slate-800/90 backdrop-blur-md p-3 sm:p-4 rounded-2xl border border-slate-700 shadow-xl mb-4 flex flex-wrap items-center justify-between gap-3">
+                
+                <!-- Stamp Selector -->
+                <div class="flex items-center space-x-2">
+                    <span class="text-xs sm:text-sm font-bold text-slate-300 uppercase tracking-wider">Stamp:</span>
+                    <div id="stamp-selector" class="flex space-x-1 sm:space-x-2">
+                        <!-- Stamps injected by JS -->
+                    </div>
+                </div>
+
+                <!-- Board Controls -->
+                <div class="flex items-center space-x-2">
+                    <button onclick="confirmNewBoard()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs sm:text-sm font-bold btn-tactile flex items-center gap-1.5">
+                        <i class="fa-solid fa-arrows-rotate"></i> New Grid
+                    </button>
+                    <button onclick="resetBoardStamps()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-xs sm:text-sm font-bold btn-tactile flex items-center gap-1.5">
+                        <i class="fa-solid fa-eraser"></i> Clear Marks
+                    </button>
+                </div>
+            </div>
+
+            <!-- Current Drawn Category Alert Bar (From Host) -->
+            <div id="active-category-banner" class="w-full max-w-2xl mb-4 hidden">
+                <div class="bg-gradient-to-r from-amber-500 to-orange-600 text-slate-900 px-4 py-2.5 rounded-2xl font-extrabold flex items-center justify-between shadow-lg animate-bounce">
+                    <div class="flex items-center space-x-3">
+                        <i id="banner-icon" class="fa-solid fa-bullhorn text-xl"></i>
+                        <span class="text-sm sm:text-base">Current Draw: <span id="banner-category-name" class="underline decoration-2">Music</span></span>
+                    </div>
+                    <span class="text-xs bg-slate-900/20 px-2.5 py-1 rounded-lg uppercase">Tap matching grid tile!</span>
+                </div>
+            </div>
+
+            <!-- BINGO 4x4 GRID -->
+            <div class="w-full max-w-2xl aspect-square grid grid-cols-4 gap-2 sm:gap-3 md:gap-4 p-2 sm:p-3 bg-slate-800/50 rounded-3xl border-2 border-slate-700/80 shadow-2xl backdrop-blur-md">
+                <!-- 16 Interactive Tiles injected via JS -->
+                <div id="bingo-grid" class="contents"></div>
+            </div>
+
+            <!-- Score/Lines Counter Bar -->
+            <div class="w-full max-w-2xl mt-4 bg-slate-800/80 border border-slate-700 rounded-2xl p-3 flex justify-around items-center text-center">
+                <div>
+                    <p class="text-xs text-slate-400 font-bold uppercase">Completed Lines</p>
+                    <p id="stat-lines" class="text-2xl font-extrabold text-amber-400">0 / 10</p>
+                </div>
+                <div class="h-8 w-px bg-slate-700"></div>
+                <div>
+                    <p class="text-xs text-slate-400 font-bold uppercase">Marked Tiles</p>
+                    <p id="stat-tiles" class="text-2xl font-extrabold text-indigo-400">0 / 16</p>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- ==================== HOST VIEW ==================== -->
+        <section id="view-host" class="w-full max-w-3xl flex flex-col items-center hidden">
+            
+            <!-- Host Controls Header Card -->
+            <div class="w-full bg-slate-800 rounded-3xl border border-slate-700 p-5 sm:p-6 shadow-2xl mb-6 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
+                
+                <div class="flex flex-col sm:flex-row justify-between items-center gap-4 border-b border-slate-700/80 pb-5 mb-5">
+                    <div>
+                        <h2 class="text-2xl font-bold text-amber-400 flex items-center gap-2">
+                            <i class="fa-solid fa-headset"></i> Host Deck Control
+                        </h2>
+                        <p class="text-slate-400 text-xs sm:text-sm">Draw cards to prompt participants and highlight active categories.</p>
+                    </div>
+
+                    <button onclick="drawTriviaCard()" class="w-full sm:w-auto px-6 py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-900 font-extrabold text-lg rounded-2xl btn-tactile shadow-lg flex items-center justify-center gap-3">
+                        <i class="fa-solid fa-cards-blank text-xl"></i> Draw Next Card
+                    </button>
+                </div>
+
+                <!-- CARD DISPLAY AREA -->
+                <div id="host-card-area" class="min-h-[260px] flex flex-col justify-center items-center text-center p-6 bg-slate-900/80 rounded-2xl border-2 border-dashed border-slate-700">
+                    <i class="fa-solid fa-layer-group text-5xl text-slate-600 mb-3"></i>
+                    <h3 class="text-xl font-bold text-slate-400">Ready to start?</h3>
+                    <p class="text-slate-500 text-sm max-w-md mt-1">Click "Draw Next Card" above to pull a random trivia question from the built-in deck.</p>
+                </div>
+
+                <!-- HOST CONTROLS BOTTOM BAR -->
+                <div class="mt-5 flex flex-wrap justify-between items-center gap-3 pt-3 border-t border-slate-700/60">
+                    <div class="text-xs text-slate-400">
+                        Remaining Deck: <span id="deck-count" class="font-bold text-white">0</span> cards
+                    </div>
+                    <button onclick="resetTriviaDeck()" class="text-xs text-slate-400 hover:text-amber-400 underline flex items-center gap-1">
+                        <i class="fa-solid fa-rotate-left"></i> Reshuffle Full Deck
+                    </button>
+                </div>
+            </div>
+
+            <!-- Host Category Quick Reference Grid -->
+            <div class="w-full bg-slate-800/60 border border-slate-700/80 rounded-3xl p-5">
+                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-shapes"></i> Category Quick Filter (Manual Broadcast)
+                </h4>
+                <div id="category-filter-buttons" class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <!-- Category buttons injected by JS -->
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="bg-slate-950 py-3 text-center border-t border-slate-800 text-xs text-slate-500">
+        Trivia Bingo Showdown • Designed for Touchscreen & Group Centre Activities
+    </footer>
+
+
+    <!-- ==================== BINGO WIN MODAL ==================== -->
+    <div id="win-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-800 border-2 border-amber-400 rounded-3xl max-w-md w-full p-6 text-center shadow-2xl relative animate-bounce-short">
+            <div class="w-20 h-20 bg-gradient-to-tr from-amber-400 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg text-slate-900 text-4xl">
+                <i class="fa-solid fa-crown"></i>
+            </div>
+            
+            <h2 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-orange-400 to-amber-200">
+                BINGO!
+            </h2>
+            <p id="win-modal-subtitle" class="text-slate-300 mt-2 font-semibold text-lg">You completed a Line!</p>
+            
+            <div class="my-6 p-4 bg-slate-900/80 rounded-2xl border border-slate-700">
+                <p id="win-modal-stats" class="text-sm text-slate-400">Great work answering trivia and completing your bingo pattern!</p>
+            </div>
+
+            <button onclick="closeWinModal()" class="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-lg rounded-2xl btn-tactile shadow-lg">
+                Continue Playing
+            </button>
+        </div>
+    </div>
+
+
+    <!-- ==================== JAVASCRIPT LOGIC ==================== -->
+    <script>
+        /* ------------------------------------------------------------------
+           1. CATEGORIES & TRIVIA DECK DATABASE
+        ------------------------------------------------------------------ */
+        const CATEGORIES = [
+            { id: 'music', name: 'Music & Hits', icon: 'fa-music', color: 'from-pink-500 to-rose-600', badge: 'bg-pink-500' },
+            { id: 'geography', name: 'Geography', icon: 'fa-earth-americas', color: 'from-blue-500 to-cyan-600', badge: 'bg-blue-500' },
+            { id: 'nature', name: 'Nature & Animals', icon: 'fa-tree', color: 'from-emerald-500 to-teal-600', badge: 'bg-emerald-500' },
+            { id: 'history', name: 'History & Tales', icon: 'fa-landmark', color: 'from-amber-600 to-yellow-700', badge: 'bg-amber-600' },
+            { id: 'food', name: 'Food & Drink', icon: 'fa-utensils', color: 'from-orange-500 to-amber-600', badge: 'bg-orange-500' },
+            { id: 'popculture', name: 'Pop Culture', icon: 'fa-tv', color: 'from-purple-500 to-indigo-600', badge: 'bg-purple-500' },
+            { id: 'sports', name: 'Sports & Games', icon: 'fa-futbol', color: 'from-red-500 to-orange-600', badge: 'bg-red-500' },
+            { id: 'general', name: 'General Knowledge', icon: 'fa-lightbulb', color: 'from-sky-500 to-indigo-600', badge: 'bg-sky-500' }
+        ];
+
+        const TRIVIA_DECK = [
+            // Music
+            { cat: 'music', q: "Which band sang the hit song 'Yellow Submarine'?", options: ["The Beatles", "The Rolling Stones", "The Beach Boys", "Queen"], ans: 0 },
+            { cat: 'music', q: "What instrument has 88 keys on a standard keyboard?", options: ["Accordion", "Organ", "Piano", "Harp"], ans: 2 },
+            { cat: 'music', q: "Who is known as the 'King of Pop'?", options: ["Elvis Presley", "Michael Jackson", "Prince", "Stevie Wonder"], ans: 1 },
+            { cat: 'music', q: "How many strings does a standard acoustic guitar have?", options: ["4", "5", "6", "8"], ans: 2 },
+            
+            // Geography
+            { cat: 'geography', q: "What is the capital city of France?", options: ["Lyon", "Marseille", "Nice", "Paris"], ans: 3 },
+            { cat: 'geography', q: "Which is the largest ocean on Earth?", options: ["Atlantic", "Indian", "Arctic", "Pacific"], ans: 3 },
+            { cat: 'geography', q: "Mount Everest is located in which mountain range?", options: ["Andes", "Himalayas", "Alps", "Rockies"], ans: 1 },
+            { cat: 'geography', q: "Which country is famous for the Great Barrier Reef?", options: ["Brazil", "Australia", "South Africa", "Thailand"], ans: 1 },
+
+            // Nature
+            { cat: 'nature', q: "What is the fastest land animal in the world?", options: ["Cheetah", "Lion", "Pronghorn", "Gazelle"], ans: 0 },
+            { cat: 'nature', q: "What gas do plants absorb from the atmosphere for photosynthesis?", options: ["Oxygen", "Nitrogen", "Carbon Dioxide", "Hydrogen"], ans: 2 },
+            { cat: 'nature', q: "How many legs does a spider have?", options: ["6", "8", "10", "12"], ans: 1 },
+            { cat: 'nature', q: "What type of tree drops acorns?", options: ["Pine", "Oak", "Maple", "Birch"], ans: 1 },
+
+            // History
+            { cat: 'history', q: "Who was the first President of the United States?", options: ["Thomas Jefferson", "Abraham Lincoln", "George Washington", "John Adams"], ans: 2 },
+            { cat: 'history', q: "Which ancient civilization built the pyramids of Giza?", options: ["Romans", "Greeks", "Egyptians", "Mayans"], ans: 2 },
+            { cat: 'history', q: "In which year did the Titanic sink?", options: ["1912", "1905", "1920", "1898"], ans: 0 },
+            { cat: 'history', q: "Who painted the Mona Lisa?", options: ["Vincent van Gogh", "Leonardo da Vinci", "Pablo Picasso", "Claude Monet"], ans: 1 },
+
+            // Food & Drink
+            { cat: 'food', q: "What is the main ingredient in traditional guacamole?", options: ["Tomato", "Avocado", "Cucumber", "Pepper"], ans: 1 },
+            { cat: 'food', q: "Which Italian dish consists of thin dough topped with tomato and cheese?", options: ["Lasagna", "Risotto", "Pizza", "Gnocchi"], ans: 2 },
+            { cat: 'food', q: "What beverage is made from brewed roasted coffee beans?", options: ["Tea", "Coffee", "Cocoa", "Cider"], ans: 1 },
+            { cat: 'food', q: "Which fruit is known for having its seeds on the outside?", options: ["Raspberry", "Strawberry", "Kiwi", "Fig"], ans: 1 },
+
+            // Pop Culture
+            { cat: 'popculture', q: "What is the name of Mickey Mouse's pet dog?", options: ["Goofy", "Pluto", "Snoopy", "Rex"], ans: 1 },
+            { cat: 'popculture', q: "In the movie 'The Wizard of Oz', what color are Dorothy's slippers?", options: ["Gold", "Silver", "Ruby Red", "Emerald Green"], ans: 2 },
+            { cat: 'popculture', q: "Which superhero is also known as Bruce Wayne?", options: ["Superman", "Spider-Man", "Batman", "Iron Man"], ans: 2 },
+            { cat: 'popculture', q: "What video game character is a Italian plumber who eats mushrooms?", options: ["Sonic", "Mario", "Zelda", "Pac-Man"], ans: 1 },
+
+            // Sports
+            { cat: 'sports', q: "How many players are on the field for one team in a standard soccer match?", options: ["9", "10", "11", "12"], ans: 2 },
+            { cat: 'sports', q: "In bowling, what is the term for knocking down all 10 pins on the first roll?", options: ["Spare", "Strike", "Turkey", "Gutter"], ans: 1 },
+            { cat: 'sports', q: "Which sport uses a shuttlecock?", options: ["Badminton", "Tennis", "Squash", "Pickleball"], ans: 0 },
+            { cat: 'sports', q: "How long is a marathon in miles (approx)?", options: ["13.1", "20.0", "26.2", "31.0"], ans: 2 },
+
+            // General Knowledge
+            { cat: 'general', q: "How many days are in a leap year?", options: ["365", "366", "364", "368"], ans: 1 },
+            { cat: 'general', q: "What color is created by mixing red and yellow paint?", options: ["Purple", "Green", "Orange", "Brown"], ans: 2 },
+            { cat: 'general', q: "Which planet in our solar system is known as the Red Planet?", options: ["Venus", "Jupiter", "Mars", "Saturn"], ans: 2 },
+            { cat: 'general', q: "How many primary colors are there?", options: ["2", "3", "4", "5"], ans: 1 }
+        ];
+
+        /* ------------------------------------------------------------------
+           2. STAMPS & STATE MANAGEMENT
+        ------------------------------------------------------------------ */
+        const STAMPS = [
+            { id: 'star', icon: 'fa-star', label: 'Star', color: 'text-amber-300' },
+            { id: 'heart', icon: 'fa-heart', label: 'Heart', color: 'text-rose-400' },
+            { id: 'smile', icon: 'fa-face-smile', label: 'Smile', color: 'text-yellow-400' },
+            { id: 'sparkle', icon: 'fa-wand-magic-sparkles', label: 'Sparkle', color: 'text-cyan-300' },
+            { id: 'trophy', icon: 'fa-trophy', label: 'Trophy', color: 'text-emerald-400' }
+        ];
+
+        let state = {
+            activeView: 'player',
+            selectedStamp: 'star',
+            soundEnabled: true,
+            board: [], // 16 tiles
+            markedTiles: new Set(),
+            completedLines: new Set(),
+            activeDrawCategory: null,
+            deckRemaining: [],
+            currentCard: null,
+            cardAnswerRevealed: false
+        };
+
+
+        /* ------------------------------------------------------------------
+           3. WEB AUDIO SYNTHESIZER (NO EXTERNAL AUDIO FILES)
+        ------------------------------------------------------------------ */
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function playSound(type) {
+            if (!state.soundEnabled) return;
+            initAudio();
+            if (!audioCtx) return;
+
+            const now = audioCtx.currentTime;
+
+            if (type === 'click') {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.exponentialRampToValueAtTime(800, now + 0.05);
+                gain.gain.setValueAtTime(0.15, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.05);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.05);
+            } 
+            else if (type === 'mark') {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(523.25, now); // C5
+                osc.frequency.setValueAtTime(659.25, now + 0.08); // E5
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.2);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.2);
+            } 
+            else if (type === 'unmark') {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.linearRampToValueAtTime(150, now + 0.1);
+                gain.gain.setValueAtTime(0.15, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.1);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.1);
+            }
+            else if (type === 'bingo') {
+                // Fanfare melody: C4, E4, G4, C5
+                const notes = [261.63, 329.63, 392.00, 523.25];
+                notes.forEach((freq, idx) => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, now + idx * 0.12);
+                    gain.gain.setValueAtTime(0.3, now + idx * 0.12);
+                    gain.gain.linearRampToValueAtTime(0.01, now + idx * 0.12 + 0.3);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now + idx * 0.12);
+                    osc.stop(now + idx * 0.12 + 0.3);
+                });
+            }
+        }
+
+        function toggleSound() {
+            state.soundEnabled = !state.soundEnabled;
+            const icon = document.getElementById('sound-icon');
+            if (state.soundEnabled) {
+                icon.className = 'fa-solid fa-volume-high';
+                playSound('click');
+            } else {
+                icon.className = 'fa-solid fa-volume-xmark text-slate-500';
+            }
+        }
+
+
+        /* ------------------------------------------------------------------
+           4. GAME SETUP & INITIALIZATION
+        ------------------------------------------------------------------ */
+        window.onload = function() {
+            renderStampSelector();
+            renderCategoryQuickFilters();
+            resetTriviaDeck();
+            generateNewBingoBoard();
+            switchView('player');
+        };
+
+        function switchView(view) {
+            playSound('click');
+            state.activeView = view;
+            const playerView = document.getElementById('view-player');
+            const hostView = document.getElementById('view-host');
+            const btnPlayer = document.getElementById('btn-mode-player');
+            const btnHost = document.getElementById('btn-mode-host');
+
+            if (view === 'player') {
+                playerView.classList.remove('hidden');
+                hostView.classList.add('hidden');
+                btnPlayer.className = "px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 bg-indigo-600 text-white shadow";
+                btnHost.className = "px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-sm font-semibold text-slate-400 transition-all flex items-center gap-2 hover:text-white";
+            } else {
+                playerView.classList.add('hidden');
+                hostView.classList.remove('hidden');
+                btnHost.className = "px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 bg-amber-500 text-slate-950 shadow";
+                btnPlayer.className = "px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-sm font-semibold text-slate-400 transition-all flex items-center gap-2 hover:text-white";
+            }
+        }
+
+
+        /* ------------------------------------------------------------------
+           5. BINGO BOARD GENERATION & TILES
+        ------------------------------------------------------------------ */
+        function generateNewBingoBoard() {
+            state.board = [];
+            state.markedTiles.clear();
+            state.completedLines.clear();
+
+            // Create a pool ensuring balanced distribution across categories
+            let pool = [];
+            for (let i = 0; i < 16; i++) {
+                // Distribute evenly across 8 categories
+                const categoryObj = CATEGORIES[i % CATEGORIES.length];
+                pool.push({
+                    id: i,
+                    category: categoryObj
+                });
+            }
+
+            // Shuffle pool
+            pool = pool.sort(() => Math.random() - 0.5);
+            state.board = pool;
+
+            renderBingoGrid();
+            updateStats();
+        }
+
+        function confirmNewBoard() {
+            playSound('click');
+            if (state.markedTiles.size > 0) {
+                if (confirm("Are you sure you want to generate a new Bingo Board? Current progress will be reset.")) {
+                    generateNewBingoBoard();
+                }
+            } else {
+                generateNewBingoBoard();
+            }
+        }
+
+        function renderStampSelector() {
+            const container = document.getElementById('stamp-selector');
+            container.innerHTML = '';
+
+            STAMPS.forEach(stamp => {
+                const btn = document.createElement('button');
+                const isSelected = stamp.id === state.selectedStamp;
+                btn.className = `w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all ${isSelected ? 'bg-amber-400 text-slate-950 scale-110 shadow-md ring-2 ring-amber-300' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`;
+                btn.innerHTML = `<i class="fa-solid ${stamp.icon} ${isSelected ? 'text-slate-950' : stamp.color}"></i>`;
+                btn.onclick = () => {
+                    playSound('click');
+                    state.selectedStamp = stamp.id;
+                    renderStampSelector();
+                    renderBingoGrid(); // Refresh icons
+                };
+                container.appendChild(btn);
+            });
+        }
+
+        function renderBingoGrid() {
+            const gridContainer = document.getElementById('bingo-grid');
+            gridContainer.innerHTML = '';
+
+            const currentStampObj = STAMPS.find(s => s.id === state.selectedStamp);
+
+            state.board.forEach((tile, index) => {
+                const isMarked = state.markedTiles.has(index);
+                const isMatchCategory = state.activeDrawCategory && tile.category.id === state.activeDrawCategory;
+
+                const tileEl = document.createElement('div');
+                tileEl.className = `bingo-tile ${isMarked ? 'marked' : ''} cursor-pointer rounded-2xl`;
+                
+                tileEl.innerHTML = `
+                    <div class="tile-inner h-full w-full">
+                        <!-- FRONT OF TILE (Unmarked) -->
+                        <div onclick="toggleTileMark(${index})" class="tile-front bg-slate-800 border-2 ${isMatchCategory ? 'highlight-category border-amber-400' : 'border-slate-700 hover:border-slate-500'} flex flex-col items-center justify-center p-2 text-center shadow-lg transition-all">
+                            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr ${tile.category.color} flex items-center justify-center shadow-md mb-1 sm:mb-2">
+                                <i class="fa-solid ${tile.category.icon} text-lg sm:text-2xl text-white"></i>
+                            </div>
+                            <span class="text-[11px] sm:text-xs font-bold leading-tight text-slate-200">${tile.category.name}</span>
+                        </div>
+
+                        <!-- BACK OF TILE (Marked / Stamped) -->
+                        <div onclick="toggleTileMark(${index})" class="tile-back bg-gradient-to-tr ${tile.category.color} border-2 border-amber-300 flex flex-col items-center justify-center p-2 text-center shadow-2xl">
+                            <i class="fa-solid ${currentStampObj.icon} text-3xl sm:text-5xl text-amber-200 drop-shadow-md animate-bounce-short"></i>
+                            <span class="text-[10px] sm:text-xs font-extrabold text-white uppercase tracking-wider mt-1">MATCH!</span>
+                        </div>
+                    </div>
+                `;
+                gridContainer.appendChild(tileEl);
+            });
+        }
+
+        function toggleTileMark(index) {
+            if (state.markedTiles.has(index)) {
+                state.markedTiles.delete(index);
+                playSound('unmark');
+            } else {
+                state.markedTiles.add(index);
+                playSound('mark');
+            }
+
+            renderBingoGrid();
+            updateStats();
+            checkBingoCondition();
+        }
+
+        function resetBoardStamps() {
+            playSound('unmark');
+            state.markedTiles.clear();
+            state.completedLines.clear();
+            renderBingoGrid();
+            updateStats();
+        }
+
+        function updateStats() {
+            document.getElementById('stat-tiles').innerText = `${state.markedTiles.size} / 16`;
+            document.getElementById('stat-lines').innerText = `${state.completedLines.size} / 10`;
+        }
+
+
+        /* ------------------------------------------------------------------
+           6. BINGO WIN DETECTION & CELEBRATION
+        ------------------------------------------------------------------ */
+        const BINGO_LINES = [
+            // Rows
+            [0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15],
+            // Columns
+            [0, 4, 8, 12], [1, 5, 9, 13], [2, 6, 10, 14], [3, 7, 11, 15],
+            // Diagonals
+            [0, 5, 10, 15], [3, 6, 9, 12]
+        ];
+
+        function checkBingoCondition() {
+            let newlyCompleted = 0;
+
+            BINGO_LINES.forEach((line, idx) => {
+                const isComplete = line.every(index => state.markedTiles.has(index));
+                if (isComplete && !state.completedLines.has(idx)) {
+                    state.completedLines.add(idx);
+                    newlyCompleted++;
+                } else if (!isComplete && state.completedLines.has(idx)) {
+                    state.completedLines.delete(idx);
+                }
+            });
+
+            if (newlyCompleted > 0) {
+                triggerBingoCelebration();
+            }
+        }
+
+        function triggerBingoCelebration() {
+            playSound('bingo');
+
+            // Fire Confetti
+            if (typeof confetti === 'function') {
+                confetti({
+                    particleCount: 100,
+                    spread: 70,
+                    origin: { y: 0.6 }
+                });
+            }
+
+            // Open Modal
+            const modal = document.getElementById('win-modal');
+            const modalSubtitle = document.getElementById('win-modal-subtitle');
+            const modalStats = document.getElementById('win-modal-stats');
+
+            if (state.completedLines.size === 10) {
+                modalSubtitle.innerText = "FULL HOUSE! BLACKOUT BINGO!";
+                modalStats.innerText = "Incredible job! You've marked off every single tile on the board!";
+            } else {
+                modalSubtitle.innerText = `You completed ${state.completedLines.size} Line${state.completedLines.size > 1 ? 's' : ''}!`;
+                modalStats.innerText = `Keep matching categories to aim for a Full House!`;
+            }
+
+            modal.classList.remove('hidden');
+        }
+
+        function closeWinModal() {
+            playSound('click');
+            document.getElementById('win-modal').classList.add('hidden');
+        }
+
+
+        /* ------------------------------------------------------------------
+           7. HOST TRIVIA DECK CONTROLS
+        ------------------------------------------------------------------ */
+        function resetTriviaDeck() {
+            state.deckRemaining = [...TRIVIA_DECK].sort(() => Math.random() - 0.5);
+            state.currentCard = null;
+            state.activeDrawCategory = null;
+            updateDeckCount();
+            renderActiveCategoryBanner();
+            renderHostCardArea();
+        }
+
+        function updateDeckCount() {
+            document.getElementById('deck-count').innerText = state.deckRemaining.length;
+        }
+
+        function drawTriviaCard() {
+            playSound('click');
+
+            if (state.deckRemaining.length === 0) {
+                resetTriviaDeck();
+            }
+
+            state.currentCard = state.deckRemaining.pop();
+            state.cardAnswerRevealed = false;
+            state.activeDrawCategory = state.currentCard.cat;
+
+            updateDeckCount();
+            renderActiveCategoryBanner();
+            renderHostCardArea();
+            renderBingoGrid(); // Update highlighted category on board
+        }
+
+        function setActiveCategoryManual(catId) {
+            playSound('click');
+            state.activeDrawCategory = catId;
+            renderActiveCategoryBanner();
+            renderBingoGrid();
+        }
+
+        function renderActiveCategoryBanner() {
+            const banner = document.getElementById('active-category-banner');
+            const catNameSpan = document.getElementById('banner-category-name');
+            const bannerIcon = document.getElementById('banner-icon');
+
+            if (!state.activeDrawCategory) {
+                banner.classList.add('hidden');
+                return;
+            }
+
+            const catObj = CATEGORIES.find(c => c.id === state.activeDrawCategory);
+            if (catObj) {
+                catNameSpan.innerText = catObj.name;
+                bannerIcon.className = `fa-solid ${catObj.icon} text-xl`;
+                banner.classList.remove('hidden');
+            }
+        }
+
+        function renderHostCardArea() {
+            const container = document.getElementById('host-card-area');
+
+            if (!state.currentCard) {
+                container.innerHTML = `
+                    <i class="fa-solid fa-layer-group text-5xl text-slate-600 mb-3"></i>
+                    <h3 class="text-xl font-bold text-slate-400">Ready to start?</h3>
+                    <p class="text-slate-500 text-sm max-w-md mt-1">Click "Draw Next Card" above to pull a random trivia question from the built-in deck.</p>
+                `;
+                return;
+            }
+
+            const card = state.currentCard;
+            const catObj = CATEGORIES.find(c => c.id === card.cat);
+
+            container.innerHTML = `
+                <div class="w-full flex flex-col items-center">
+                    <!-- Category Badge -->
+                    <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full ${catObj.badge} text-white font-extrabold text-xs uppercase tracking-wider mb-4 shadow">
+                        <i class="fa-solid ${catObj.icon}"></i>
+                        ${catObj.name}
+                    </div>
+
+                    <!-- Question -->
+                    <h3 class="text-xl sm:text-2xl font-bold text-white mb-6 leading-snug max-w-xl">
+                        "${card.q}"
+                    </h3>
+
+                    <!-- Multiple Choice Options -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-xl text-left mb-5">
+                        ${card.options.map((opt, idx) => `
+                            <div class="p-3 rounded-xl bg-slate-800 border ${state.cardAnswerRevealed && idx === card.ans ? 'border-emerald-400 bg-emerald-950/60 font-bold text-emerald-300' : 'border-slate-700 text-slate-200'} flex items-center justify-between">
+                                <span class="text-sm">${String.fromCharCode(65 + idx)}. ${opt}</span>
+                                ${state.cardAnswerRevealed && idx === card.ans ? '<i class="fa-solid fa-circle-check text-emerald-400"></i>' : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <!-- Answer Reveal Button -->
+                    <button onclick="revealCardAnswer()" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold text-sm rounded-xl border border-amber-400/40 btn-tactile flex items-center gap-2">
+                        <i class="fa-solid ${state.cardAnswerRevealed ? 'fa-eye-slash' : 'fa-lightbulb'}"></i>
+                        ${state.cardAnswerRevealed ? 'Hide Answer' : 'Reveal Correct Answer'}
+                    </button>
+                </div>
+            `;
+        }
+
+        function revealCardAnswer() {
+            playSound('click');
+            state.cardAnswerRevealed = !state.cardAnswerRevealed;
+            renderHostCardArea();
+        }
+
+        function renderCategoryQuickFilters() {
+            const container = document.getElementById('category-filter-buttons');
+            container.innerHTML = '';
+
+            CATEGORIES.forEach(cat => {
+                const btn = document.createElement('button');
+                btn.className = "p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold flex items-center gap-2 btn-tactile transition-all";
+                btn.onclick = () => setActiveCategoryManual(cat.id);
+                btn.innerHTML = `
+                    <div class="w-6 h-6 rounded-lg ${cat.badge} flex items-center justify-center text-white text-xs">
+                        <i class="fa-solid ${cat.icon}"></i>
+                    </div>
+                    <span class="truncate">${cat.name}</span>
+                `;
+                container.appendChild(btn);
+            });
+        }
+    </script>
+</body>
+</html>
